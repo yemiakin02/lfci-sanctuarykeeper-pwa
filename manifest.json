@@ -1,0 +1,65 @@
+// ==========================================
+// FILE 1: manifest.json (Save as: public/manifest.json)
+// ==========================================
+
+{
+  "name": "Sanctuary Keeper - LFCI Winnipeg",
+  "short_name": "Sanctuary Keeper",
+  "description": "Attendance System for LFCI Winnipeg, Canada",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fef2f2",
+  "theme_color": "#ef4444",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-US",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/yemiakin02/Winniner_logo/main/logo_winners%20(1).PNG",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/yemiakin02/Winniner_logo/main/logo_winners%20(1).PNG",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/mobile.png",
+      "sizes": "640x1136",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["productivity", "business", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Mark Attendance",
+      "short_name": "Attendance",
+      "description": "Quickly mark your attendance",
+      "url": "/?action=attendance",
+      "icons": [
+        {
+          "src": "https://raw.githubusercontent.com/yemiakin02/Winniner_logo/main/logo_winners%20(1).PNG",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Admin Dashboard",
+      "short_name": "Admin",
+      "description": "Access admin dashboard",
+      "url": "/?action=admin",
+      "icons": [
+        {
+          "src": "https://raw.githubusercontent.com/yemiakin02/Winniner_logo/main/logo_winners%20(1).PNG",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ]
+}
