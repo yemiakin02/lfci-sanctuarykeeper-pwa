@@ -1,486 +1,672 @@
-// ==========================================
-// FILE 3: pwa-integration.js (Save as: public/pwa-integration.js)
-// ==========================================
-
-class SanctuaryKeeperPWA {
+// PWA Integration for Sanctuary Keeper
+class PWAIntegration {
   constructor() {
     this.deferredPrompt = null;
+    this.isInstalled = false;
     this.isOnline = navigator.onLine;
-    this.isInstalled = this.checkIfInstalled();
-    
-    // Your actual Firebase configuration
-    this.firebaseConfig = {
-      apiKey: "AIzaSyAwfkDMy5hCWNBBHhLApXRZmvYIZVo7vOE",
-      authDomain: "attendance-system-c8323.firebaseapp.com",
-      projectId: "attendance-system-c8323",
-      storageBucket: "attendance-system-c8323.firebasestorage.app",
-      messagingSenderId: "285619179838",
-      appId: "1:285619179838:web:46a8f37de16ff59d9edc6f"
-    };
-    
-    // Your actual VAPID key
-    this.vapidKey = "BN1oojhOz-akRmj9qYgoxVByQqWzBaCzsjm3tLZrk9GuLEqTnzqHCTUeCQkp_ysz9K4VH86u5sTlcupkqCviBhY";
+    this.serviceWorkerRegistration = null;
     
     this.init();
   }
-
+  
   async init() {
-    console.log('🏛️ Initializing Sanctuary Keeper PWA...');
+    console.log('🔧 PWA Integration initializing...');
     
+    // Register service worker
     await this.registerServiceWorker();
-    this.setupInstallPrompt();
-    this.setupOfflineHandling();
-    await this.initFirebase();
-    await this.setupNotifications();
-    this.connectExistingForms();
-    this.addInstallButton();
     
-    console.log('✅ Sanctuary Keeper PWA Ready!');
+    // Setup install prompt
+    this.setupInstallPrompt();
+    
+    // Setup offline detection
+    this.setupOfflineDetection();
+    
+    // Setup periodic sync
+    this.setupPeriodicSync();
+    
+    // Setup push notifications
+    this.setupPushNotifications();
+    
+    // Handle app shortcuts
+    this.handleAppShortcuts();
+    
+    // Setup beforeinstallprompt event
+    this.setupBeforeInstallPrompt();
+    
+    console.log('✅ PWA Integration initialized successfully');
   }
-
-  // SERVICE WORKER REGISTRATION
+  
   async registerServiceWorker() {
     if ('serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js');
-        console.log('✅ Service Worker registered');
-        
-        registration.addEventListener('updatefound', () => {
-          this.showUpdateNotification();
+        const registration = await navigator.serviceWorker.register('/sw.js', {
+          scope: '/'
         });
-
-        return registration;
+        
+        this.serviceWorkerRegistration = registration;
+        console.log('✅ Service Worker registered:', registration.scope);
+        
+        // Handle service worker updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.log('🔄 New service worker installing...');
+          
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              this.showUpdateAvailableNotification();
+            }
+          });
+        });
+        
+        // Listen for messages from service worker
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          this.handleServiceWorkerMessage(event.data);
+        });
+        
       } catch (error) {
         console.error('❌ Service Worker registration failed:', error);
       }
+    } else {
+      console.warn('⚠️ Service Worker not supported');
     }
   }
-
-  showUpdateNotification() {
-    this.showToast('New version available! Please refresh.', 'info');
-  }
-
-  // PWA INSTALLATION
+  
   setupInstallPrompt() {
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      this.deferredPrompt = e;
-      this.showInstallButton();
-    });
-
-    window.addEventListener('appinstalled', () => {
-      console.log('✅ Sanctuary Keeper installed');
+    const installBanner = document.getElementById('pwaInstallBanner');
+    const installButton = document.getElementById('pwaInstallButton');
+    const dismissButton = document.getElementById('pwaInstallDismiss');
+    
+    if (!installBanner || !installButton || !dismissButton) {
+      console.warn('⚠️ Install banner elements not found');
+      return;
+    }
+    
+    // Check if app is already installed
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
       this.isInstalled = true;
-      this.hideInstallButton();
-      this.showToast('Sanctuary Keeper installed successfully!', 'success');
-    });
-  }
-
-  addInstallButton() {
-    const installBtn = document.createElement('button');
-    installBtn.id = 'pwa-install-btn';
-    installBtn.innerHTML = '📱';
-    installBtn.title = 'Install Sanctuary Keeper App';
-    installBtn.style.cssText = `
-      position: fixed;
-      top: 70px;
-      right: 20px;
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #10b981, #059669);
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-size: 1.2rem;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
-    `;
+      installBanner.style.display = 'none';
+      return;
+    }
     
-    installBtn.addEventListener('click', () => this.installApp());
-    installBtn.addEventListener('mouseenter', () => {
-      installBtn.style.transform = 'scale(1.1)';
-    });
-    installBtn.addEventListener('mouseleave', () => {
-      installBtn.style.transform = 'scale(1)';
+    // Check if user has dismissed the banner before
+    if (localStorage.getItem('pwa-install-dismissed') === 'true') {
+      installBanner.style.display = 'none';
+      return;
+    }
+    
+    // Show install banner after delay
+    setTimeout(() => {
+      if (this.deferredPrompt && !this.isInstalled) {
+        installBanner.style.display = 'block';
+      }
+    }, 5000);
+    
+    // Handle install button click
+    installButton.addEventListener('click', () => {
+      this.promptInstall();
     });
     
-    document.body.appendChild(installBtn);
+    // Handle dismiss button click
+    dismissButton.addEventListener('click', () => {
+      installBanner.style.display = 'none';
+      localStorage.setItem('pwa-install-dismissed', 'true');
+    });
   }
-
-  showInstallButton() {
-    const installBtn = document.getElementById('pwa-install-btn');
-    if (installBtn) {
-      installBtn.style.display = 'flex';
+  
+  setupBeforeInstallPrompt() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+      console.log('📱 beforeinstallprompt event fired');
+      
+      // Prevent the mini-infobar from appearing
+      event.preventDefault();
+      
+      // Save the event for later use
+      this.deferredPrompt = event;
+    });
+    
+    window.addEventListener('appinstalled', (event) => {
+      console.log('✅ PWA was installed');
+      this.isInstalled = true;
+      
+      // Hide install banner
+      const installBanner = document.getElementById('pwaInstallBanner');
+      if (installBanner) {
+        installBanner.style.display = 'none';
+      }
+      
+      // Track installation
+      this.trackEvent('pwa_installed');
+    });
+  }
+  
+  async promptInstall() {
+    if (!this.deferredPrompt) {
+      console.warn('⚠️ Install prompt not available');
+      return;
     }
-  }
-
-  hideInstallButton() {
-    const installBtn = document.getElementById('pwa-install-btn');
-    if (installBtn) {
-      installBtn.style.display = 'none';
-    }
-  }
-
-  async installApp() {
-    if (!this.deferredPrompt) return false;
-
+    
     try {
+      // Show the install prompt
       this.deferredPrompt.prompt();
+      
+      // Wait for user response
       const { outcome } = await this.deferredPrompt.userChoice;
       
+      console.log(`👤 User ${outcome} the install prompt`);
+      
       if (outcome === 'accepted') {
-        this.showToast('Installing Sanctuary Keeper...', 'success');
+        this.trackEvent('pwa_install_accepted');
+      } else {
+        this.trackEvent('pwa_install_dismissed');
       }
       
+      // Clear the prompt
       this.deferredPrompt = null;
-      this.hideInstallButton();
       
-      return outcome === 'accepted';
-    } catch (error) {
-      console.error('❌ Installation error:', error);
-      return false;
-    }
-  }
-
-  checkIfInstalled() {
-    return window.matchMedia('(display-mode: standalone)').matches ||
-           window.navigator.standalone === true;
-  }
-
-  // FIREBASE INTEGRATION
-  async initFirebase() {
-    try {
-      const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js');
-      const { getFirestore, collection, addDoc, getDocs, serverTimestamp, onSnapshot } = 
-        await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-
-      this.app = initializeApp(this.firebaseConfig);
-      this.db = getFirestore(this.app);
-      this.firestoreModules = { collection, addDoc, getDocs, serverTimestamp, onSnapshot };
-      
-      console.log('✅ Firebase connected to attendance-system-c8323');
-    } catch (error) {
-      console.error('❌ Firebase connection failed:', error);
-      this.showToast('Database connection failed. Working offline.', 'warning');
-    }
-  }
-
-  // FORM INTEGRATION - Works with your existing forms
-  connectExistingForms() {
-    // Auto-enhance forms with data-pwa-sync attribute
-    const pwaForms = document.querySelectorAll('form[data-pwa-sync]');
-    pwaForms.forEach(form => {
-      const collection = form.dataset.pwaSync;
-      this.enhanceForm(form, collection);
-    });
-
-    // Find common form patterns in your existing code
-    this.findAndEnhanceForms();
-  }
-
-  findAndEnhanceForms() {
-    // Look for attendance forms
-    const attendanceForms = document.querySelectorAll(
-      '#attendanceForm, .attendance-form, form[action*="attendance"]'
-    );
-    attendanceForms.forEach(form => this.enhanceForm(form, 'attendance_pwa'));
-
-    // Look for registration forms  
-    const registrationForms = document.querySelectorAll(
-      '#registrationForm, .registration-form, form[action*="register"]'
-    );
-    registrationForms.forEach(form => this.enhanceForm(form, 'registrations_pwa'));
-
-    // Look for admin forms
-    const adminForms = document.querySelectorAll(
-      '.admin-card form, .admin-form'
-    );
-    adminForms.forEach(form => this.enhanceForm(form, 'admin_actions_pwa'));
-  }
-
-  enhanceForm(form, collectionName) {
-    console.log(`📝 Enhancing form for ${collectionName} collection`);
-    
-    form.addEventListener('submit', async (e) => {
-      // Don't prevent default - let your existing code run
-      
-      try {
-        // Get form data
-        const formData = new FormData(form);
-        const data = Object.fromEntries(formData);
-        
-        // Add PWA metadata
-        data._pwa_timestamp = new Date().toISOString();
-        data._pwa_collection = collectionName;
-        data._pwa_online = this.isOnline;
-        data._pwa_source = 'sanctuary_keeper';
-        data._pwa_user_agent = navigator.userAgent;
-        
-        // Save to Firestore or offline storage
-        if (this.isOnline && this.db) {
-          await this.saveToFirestore(data, collectionName);
-          console.log(`✅ Saved to ${collectionName} collection in Firestore`);
-        } else {
-          this.saveOffline(data, collectionName);
-          console.log(`💾 Saved ${collectionName} data offline`);
-          this.showToast('Data saved offline. Will sync when online.', 'info');
-        }
-        
-      } catch (error) {
-        console.error('❌ PWA save failed:', error);
-        // Don't break the form - your existing functionality continues
+      // Hide install banner
+      const installBanner = document.getElementById('pwaInstallBanner');
+      if (installBanner) {
+        installBanner.style.display = 'none';
       }
-    });
+      
+    } catch (error) {
+      console.error('❌ Install prompt error:', error);
+    }
   }
-
-  async saveToFirestore(data, collectionName) {
-    if (!this.db || !this.firestoreModules) return;
+  
+  setupOfflineDetection() {
+    const offlineIndicator = document.getElementById('offlineIndicator');
     
-    const { collection, addDoc, serverTimestamp } = this.firestoreModules;
+    if (!offlineIndicator) {
+      console.warn('⚠️ Offline indicator element not found');
+      return;
+    }
     
-    return await addDoc(collection(this.db, collectionName), {
-      ...data,
-      timestamp: serverTimestamp(),
-      source: 'sanctuary_keeper_pwa',
-      project: 'attendance-system-c8323'
-    });
-  }
-
-  saveOffline(data, collectionName) {
-    const offlineKey = `offline_${collectionName}_${Date.now()}`;
-    const offlineData = {
-      data: data,
-      collection: collectionName,
-      timestamp: new Date().toISOString()
+    // Update online status
+    const updateOnlineStatus = () => {
+      this.isOnline = navigator.onLine;
+      
+      if (this.isOnline) {
+        offlineIndicator.style.display = 'none';
+        console.log('🌐 Back online');
+        this.handleBackOnline();
+      } else {
+        offlineIndicator.style.display = 'block';
+        console.log('📡 Gone offline');
+        this.handleGoOffline();
+      }
     };
     
-    localStorage.setItem(offlineKey, JSON.stringify(offlineData));
+    // Listen for online/offline events
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
     
-    // Schedule background sync
-    if ('serviceWorker' in navigator && 'sync' in window.ServiceWorkerRegistration.prototype) {
-      navigator.serviceWorker.ready.then(registration => {
-        return registration.sync.register('attendance-sync');
-      });
-    }
+    // Initial check
+    updateOnlineStatus();
   }
-
-  // OFFLINE HANDLING
-  setupOfflineHandling() {
-    window.addEventListener('online', () => {
-      console.log('🌐 Back online');
-      this.isOnline = true;
-      this.updateConnectionStatus(true);
-      this.syncOfflineData();
-    });
-
-    window.addEventListener('offline', () => {
-      console.log('📴 Gone offline');
-      this.isOnline = false;
-      this.updateConnectionStatus(false);
-    });
-
-    this.updateConnectionStatus(this.isOnline);
-  }
-
-  updateConnectionStatus(isOnline) {
-    let statusIndicator = document.getElementById('pwa-connection-status');
-    
-    if (!statusIndicator) {
-      statusIndicator = document.createElement('div');
-      statusIndicator.id = 'pwa-connection-status';
-      statusIndicator.style.cssText = `
-        position: fixed;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        z-index: 1000;
-        transition: all 0.3s ease;
-        backdrop-filter: blur(10px);
-      `;
-      document.body.appendChild(statusIndicator);
+  
+  handleBackOnline() {
+    // Trigger background sync when back online
+    if (this.serviceWorkerRegistration && 'sync' in window.ServiceWorkerRegistration.prototype) {
+      this.serviceWorkerRegistration.sync.register('user-data-sync');
+      this.serviceWorkerRegistration.sync.register('attendance-submission');
     }
     
-    if (isOnline) {
-      statusIndicator.style.background = 'rgba(16, 185, 129, 0.9)';
-      statusIndicator.style.color = 'white';
-      statusIndicator.textContent = '🟢 Connected to Firebase';
-      
-      setTimeout(() => {
-        statusIndicator.style.opacity = '0';
-      }, 2000);
-    } else {
-      statusIndicator.style.background = 'rgba(239, 68, 68, 0.9)';
-      statusIndicator.style.color = 'white';
-      statusIndicator.style.opacity = '1';
-      statusIndicator.textContent = '🔴 Offline - Data will sync when connected';
-    }
+    // Show toast notification
+    this.showToast('🌐 Back online! Syncing data...', 'success');
+    
+    // Refresh critical data
+    this.refreshCriticalData();
   }
-
-  async syncOfflineData() {
-    console.log('🔄 Syncing offline data to Firebase...');
+  
+  handleGoOffline() {
+    // Show offline notification
+    this.showToast('📡 You\'re offline. Limited functionality available.', 'warning');
     
-    const offlineKeys = Object.keys(localStorage).filter(key => key.startsWith('offline_'));
-    let syncedCount = 0;
-    
-    for (const key of offlineKeys) {
+    // Enable offline mode in the app
+    document.body.classList.add('offline-mode');
+  }
+  
+  async setupPeriodicSync() {
+    if ('serviceWorker' in navigator && this.serviceWorkerRegistration) {
       try {
-        const offlineData = JSON.parse(localStorage.getItem(key));
-        await this.saveToFirestore(offlineData.data, offlineData.collection);
-        localStorage.removeItem(key);
-        syncedCount++;
+        // Register periodic background sync (requires permission)
+        if ('periodicSync' in this.serviceWorkerRegistration) {
+          const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+          
+          if (status.state === 'granted') {
+            await this.serviceWorkerRegistration.periodicSync.register('user-data-sync', {
+              minInterval: 24 * 60 * 60 * 1000, // 24 hours
+            });
+            console.log('✅ Periodic sync registered');
+          }
+        }
       } catch (error) {
-        console.error('❌ Sync failed:', error);
+        console.warn('⚠️ Periodic sync not supported or failed:', error);
       }
     }
-    
-    if (syncedCount > 0) {
-      this.showToast(`✅ Synced ${syncedCount} offline records to Firebase`, 'success');
+  }
+  
+  async setupPushNotifications() {
+    if ('Notification' in window && 'serviceWorker' in navigator) {
+      try {
+        // Check current permission
+        let permission = Notification.permission;
+        
+        if (permission === 'default') {
+          // Request permission if not already granted or denied
+          permission = await Notification.requestPermission();
+        }
+        
+        if (permission === 'granted' && this.serviceWorkerRegistration) {
+          console.log('✅ Push notifications permission granted');
+          
+          // Subscribe to push notifications
+          const subscription = await this.serviceWorkerRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: this.urlBase64ToUint8Array(
+              'BEl62iUYgUivxIkv69yViEuiBIa40HI80NM-QdUbLI8'  // Replace with your VAPID public key
+            )
+          });
+          
+          // Send subscription to server
+          await this.sendSubscriptionToServer(subscription);
+          
+        } else {
+          console.warn('⚠️ Push notifications permission denied');
+        }
+      } catch (error) {
+        console.error('❌ Push notification setup failed:', error);
+      }
     }
   }
-
-  // PUSH NOTIFICATIONS
-  async setupNotifications() {
-    if (!('Notification' in window)) {
-      console.log('❌ Notifications not supported');
+  
+  handleAppShortcuts() {
+    // Handle URL parameters for app shortcuts
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+    
+    if (action) {
+      this.handleShortcutAction(action);
+    }
+    
+    // Handle hash-based shortcuts
+    if (window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      this.handleShortcutAction(hash);
+    }
+  }
+  
+  handleShortcutAction(action) {
+    console.log('🔗 Handling shortcut action:', action);
+    
+    switch (action) {
+      case 'submit-attendance':
+        // Navigate to attendance submission
+        setTimeout(() => {
+          if (typeof handleSummarySubmitAttendance === 'function') {
+            handleSummarySubmitAttendance();
+          }
+        }, 1000);
+        break;
+        
+      case 'admin-panel':
+        // Navigate to admin panel
+        setTimeout(() => {
+          if (typeof handleAdminIconClick === 'function') {
+            handleAdminIconClick();
+          }
+        }, 1000);
+        break;
+        
+      default:
+        console.warn('⚠️ Unknown shortcut action:', action);
+    }
+    
+    // Clear the URL parameter/hash
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
+  
+  handleServiceWorkerMessage(data) {
+    console.log('📩 Message from service worker:', data);
+    
+    switch (data.type) {
+      case 'SYNC_COMPLETE':
+        this.handleSyncComplete(data.payload);
+        break;
+        
+      case 'CACHE_UPDATED':
+        this.handleCacheUpdated(data.payload);
+        break;
+        
+      case 'OFFLINE_SUBMISSION_STORED':
+        this.showToast('📝 Attendance saved offline. Will sync when online.', 'info');
+        break;
+        
+      default:
+        console.warn('⚠️ Unknown service worker message type:', data.type);
+    }
+  }
+  
+  handleSyncComplete(payload) {
+    if (payload.type === 'attendance') {
+      this.showToast('✅ Offline attendance submissions synced!', 'success');
+      
+      // Refresh the UI to show updated data
+      if (typeof updateUISummaryPageContent === 'function') {
+        updateUISummaryPageContent();
+      }
+    }
+  }
+  
+  handleCacheUpdated(payload) {
+    console.log('🔄 Cache updated:', payload);
+    
+    // Refresh UI with updated data if necessary
+    if (payload.url.includes('/api/user-profile')) {
+      if (typeof updateUISummaryPageContent === 'function') {
+        updateUISummaryPageContent();
+      }
+    }
+  }
+  
+  async refreshCriticalData() {
+    try {
+      // Refresh user profile data
+      if (typeof navigateToSummaryPage === 'function') {
+        await navigateToSummaryPage();
+      }
+      
+      // Refresh announcements
+      if (typeof displayAnnouncementOnPage === 'function') {
+        displayAnnouncementOnPage();
+      }
+      
+      console.log('✅ Critical data refreshed');
+    } catch (error) {
+      console.error('❌ Failed to refresh critical data:', error);
+    }
+  }
+  
+  showUpdateAvailableNotification() {
+    const updateMessage = 'A new version of Sanctuary Keeper is available. Refresh to update?';
+    
+    if (confirm(updateMessage)) {
+      // Tell the service worker to skip waiting
+      if (this.serviceWorkerRegistration && this.serviceWorkerRegistration.waiting) {
+        this.serviceWorkerRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        
+        // Refresh the page when the new service worker takes control
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          window.location.reload();
+        });
+      }
+    }
+  }
+  
+  async sendSubscriptionToServer(subscription) {
+    try {
+      // Send push subscription to your backend
+      const response = await fetch('/api/push-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscription: subscription,
+          userId: this.getCurrentUserId()
+        })
+      });
+      
+      if (response.ok) {
+        console.log('✅ Push subscription sent to server');
+      } else {
+        console.error('❌ Failed to send push subscription to server');
+      }
+    } catch (error) {
+      console.error('❌ Error sending push subscription:', error);
+    }
+  }
+  
+  getCurrentUserId() {
+    // Get current user ID from your app's user management system
+    try {
+      const userData = localStorage.getItem('SK_CurrentUser');
+      if (userData) {
+        const user = JSON.parse(userData);
+        return user.firebaseUid || user.memberId;
+      }
+    } catch (error) {
+      console.error('❌ Error getting current user ID:', error);
+    }
+    return null;
+  }
+  
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
+    
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+  
+  showToast(message, type = 'info', duration = 3000) {
+    // Use the existing toast system if available
+    if (typeof showToast === 'function') {
+      showToast(message, type, duration);
       return;
     }
-
-    const permission = await this.requestNotificationPermission();
     
-    if (permission === 'granted') {
-      await this.getFCMToken();
-      this.setupForegroundMessages();
-    }
-  }
-
-  async requestNotificationPermission() {
-    try {
-      const permission = await Notification.requestPermission();
-      
-      if (permission === 'granted') {
-        console.log('✅ Notification permission granted');
-        this.showToast('Notifications enabled for Sanctuary Keeper', 'success');
-      }
-      
-      return permission;
-    } catch (error) {
-      console.error('❌ Notification permission error:', error);
-      return 'denied';
-    }
-  }
-
-  async getFCMToken() {
-    try {
-      const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
-      
-      const messaging = getMessaging(this.app);
-      const token = await getToken(messaging, {
-        vapidKey: this.vapidKey
-      });
-      
-      if (token) {
-        console.log('✅ FCM Token received');
-        await this.saveTokenToFirestore(token);
-      }
-    } catch (error) {
-      console.error('❌ FCM token error:', error);
-    }
-  }
-
-  async saveTokenToFirestore(token) {
-    if (!this.db) return;
-    
-    try {
-      const { collection, addDoc, serverTimestamp } = this.firestoreModules;
-      
-      await addDoc(collection(this.db, 'fcm_tokens'), {
-        token: token,
-        timestamp: serverTimestamp(),
-        userAgent: navigator.userAgent,
-        app: 'sanctuary_keeper',
-        project: 'attendance-system-c8323'
-      });
-    } catch (error) {
-      console.error('❌ Error saving FCM token:', error);
-    }
-  }
-
-  async setupForegroundMessages() {
-    try {
-      const { getMessaging, onMessage } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js');
-      
-      const messaging = getMessaging(this.app);
-      
-      onMessage(messaging, (payload) => {
-        console.log('📬 Foreground message received:', payload);
-        const { title, body } = payload.notification || {};
-        this.showToast(`${title}: ${body}`, 'info');
-      });
-    } catch (error) {
-      console.error('❌ Foreground message setup failed:', error);
-    }
-  }
-
-  // UTILITY METHODS
-  showToast(message, type = 'info') {
-    // Try to use your existing toast system first
-    const existingToast = document.getElementById('toast');
-    if (existingToast) {
-      existingToast.textContent = message;
-      existingToast.className = type;
-      existingToast.classList.remove('hidden');
-      
-      setTimeout(() => {
-        existingToast.classList.add('hidden');
-      }, 3000);
-      return;
-    }
-    
-    // Fallback: create PWA toast
+    // Fallback toast implementation
     const toast = document.createElement('div');
+    toast.className = `pwa-toast pwa-toast-${type}`;
+    toast.textContent = message;
     toast.style.cssText = `
       position: fixed;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
+      background: ${this.getToastColor(type)};
+      color: white;
       padding: 12px 20px;
-      border-radius: 15px;
-      z-index: 1000;
-      font-weight: 500;
-      backdrop-filter: blur(10px);
-      max-width: 90%;
-      text-align: center;
+      border-radius: 8px;
+      z-index: 10000;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     `;
-    
-    // Use your app's color scheme
-    if (type === 'success') toast.style.background = 'rgba(16, 185, 129, 0.9)';
-    else if (type === 'error') toast.style.background = 'rgba(239, 68, 68, 0.9)';
-    else if (type === 'warning') toast.style.background = 'rgba(217, 119, 6, 0.9)';
-    else toast.style.background = 'rgba(59, 130, 246, 0.9)';
-    
-    toast.style.color = 'white';
-    toast.textContent = message;
     
     document.body.appendChild(toast);
     
     setTimeout(() => {
-      toast.remove();
-    }, 3000);
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, duration);
+  }
+  
+  getToastColor(type) {
+    const colors = {
+      success: '#10b981',
+      error: '#ef4444',
+      warning: '#f59e0b',
+      info: '#3b82f6'
+    };
+    return colors[type] || colors.info;
+  }
+  
+  trackEvent(eventName, properties = {}) {
+    console.log('📊 PWA Event:', eventName, properties);
+    
+    // Integrate with your analytics system here
+    // Example: Google Analytics 4
+    if (typeof gtag === 'function') {
+      gtag('event', eventName, {
+        app_name: 'Sanctuary Keeper',
+        app_version: '1.0.0',
+        ...properties
+      });
+    }
+  }
+  
+  // Public methods for app integration
+  
+  async cacheOfflineSubmission(submissionData) {
+    if (this.serviceWorkerRegistration) {
+      // Send data to service worker for offline storage
+      navigator.serviceWorker.controller?.postMessage({
+        type: 'CACHE_ATTENDANCE',
+        payload: submissionData
+      });
+      
+      // Also register for background sync
+      if ('sync' in this.serviceWorkerRegistration) {
+        await this.serviceWorkerRegistration.sync.register('attendance-submission');
+      }
+    }
+  }
+  
+  isAppInstalled() {
+    return this.isInstalled || 
+           window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+  }
+  
+  isAppOnline() {
+    return this.isOnline;
+  }
+  
+  async requestPersistentStorage() {
+    if ('storage' in navigator && 'persist' in navigator.storage) {
+      try {
+        const persistent = await navigator.storage.persist();
+        console.log(persistent ? '✅ Persistent storage granted' : '⚠️ Persistent storage denied');
+        return persistent;
+      } catch (error) {
+        console.error('❌ Error requesting persistent storage:', error);
+        return false;
+      }
+    }
+    return false;
+  }
+  
+  async estimateStorage() {
+    if ('storage' in navigator && 'estimate' in navigator.storage) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        console.log('💾 Storage estimate:', estimate);
+        return estimate;
+      } catch (error) {
+        console.error('❌ Error estimating storage:', error);
+        return null;
+      }
+    }
+    return null;
+  }
+  
+  // Share API integration
+  async shareContent(shareData) {
+    if ('share' in navigator) {
+      try {
+        await navigator.share(shareData);
+        console.log('✅ Content shared successfully');
+        this.trackEvent('content_shared', { type: shareData.title });
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('❌ Error sharing content:', error);
+        }
+      }
+    } else {
+      // Fallback: copy to clipboard
+      if ('clipboard' in navigator) {
+        try {
+          await navigator.clipboard.writeText(shareData.url || shareData.text);
+          this.showToast('📋 Copied to clipboard!', 'success');
+        } catch (error) {
+          console.error('❌ Error copying to clipboard:', error);
+        }
+      }
+    }
+  }
+  
+  // Badging API for app icon badges
+  setBadge(count = 0) {
+    if ('setAppBadge' in navigator) {
+      navigator.setAppBadge(count).catch(error => {
+        console.error('❌ Error setting app badge:', error);
+      });
+    }
+  }
+  
+  clearBadge() {
+    if ('clearAppBadge' in navigator) {
+      navigator.clearAppBadge().catch(error => {
+        console.error('❌ Error clearing app badge:', error);
+      });
+    }
   }
 }
 
-// Auto-initialize when page loads
+// Initialize PWA Integration when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-  window.sanctuaryKeeperPWA = new SanctuaryKeeperPWA();
+  window.pwaIntegration = new PWAIntegration();
 });
 
-window.SanctuaryKeeperPWA = SanctuaryKeeperPWA;
+// Export for use in other parts of the app
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = PWAIntegration;
+}
+
+// Global PWA utilities
+window.PWAUtils = {
+  // Check if running as PWA
+  isPWA: () => {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+  },
+  
+  // Check if PWA installation is available
+  canInstall: () => {
+    return window.pwaIntegration && window.pwaIntegration.deferredPrompt !== null;
+  },
+  
+  // Trigger PWA installation
+  install: () => {
+    if (window.pwaIntegration) {
+      return window.pwaIntegration.promptInstall();
+    }
+  },
+  
+  // Check online status
+  isOnline: () => {
+    return window.pwaIntegration ? window.pwaIntegration.isAppOnline() : navigator.onLine;
+  },
+  
+  // Share functionality
+  share: (data) => {
+    if (window.pwaIntegration) {
+      return window.pwaIntegration.shareContent(data);
+    }
+  },
+  
+  // Badge functionality
+  setBadge: (count) => {
+    if (window.pwaIntegration) {
+      window.pwaIntegration.setBadge(count);
+    }
+  },
+  
+  clearBadge: () => {
+    if (window.pwaIntegration) {
+      window.pwaIntegration.clearBadge();
+    }
+  }
+};
